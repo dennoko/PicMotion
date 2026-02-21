@@ -10,6 +10,7 @@ namespace PicMotion.Pipeline
     /// <summary>
     /// ポーズ生成の全パイプラインを統括するオーケストレータ。
     /// 各モジュールをインターフェース経由で連携させる（DIP準拠）。
+    /// アバターPrefabの一時インスタンス化もここで管理する。
     /// </summary>
     public class PoseGenerationPipeline
     {
@@ -35,37 +36,52 @@ namespace PicMotion.Pipeline
 
         /// <summary>
         /// パイプライン全体を実行する。
+        /// アバターPrefabを一時的にインスタンス化し、完了後に破棄する。
         /// </summary>
-        /// <param name="sourceImage">入力画像</param>
-        /// <param name="referenceAvatar">基準姿勢のアバター</param>
-        /// <param name="savePath">アニメーション保存先パス</param>
-        /// <returns>パイプライン実行結果</returns>
         public PoseEstimationResult Execute(
-            Texture2D sourceImage, Avatar referenceAvatar, string savePath)
+            Texture2D sourceImage, GameObject avatarPrefab, string savePath)
         {
-            // Step 1: 画像前処理
-            var preprocessed = _preprocessor.Process(sourceImage);
+            // アバターの一時インスタンス生成
+            var instance = Object.Instantiate(avatarPrefab);
+            instance.hideFlags = HideFlags.HideAndDontSave;
+            var animator = instance.GetComponent<Animator>();
 
-            // Step 2: ポーズ推定推論
-            var landmarks = _estimator.Estimate(preprocessed);
-            if (landmarks == null || landmarks.Length == 0)
+            try
             {
-                return PoseEstimationResult.Failure(
-                    "ポーズが検出されませんでした。画像に人物が写っているか確認してください。");
+                if (animator == null || !animator.avatar.isHuman)
+                {
+                    return PoseEstimationResult.Failure(
+                        "指定されたPrefabにHumanoid Animatorが含まれていません。");
+                }
+
+                // Step 1: 画像前処理
+                var preprocessed = _preprocessor.Process(sourceImage);
+
+                // Step 2: ポーズ推定推論
+                var landmarks = _estimator.Estimate(preprocessed);
+                if (landmarks == null || landmarks.Length == 0)
+                {
+                    return PoseEstimationResult.Failure(
+                        "ポーズが検出されませんでした。画像に人物が写っているか確認してください。");
+                }
+
+                // Step 3: 深度推定
+                _depthEstimator.EstimateDepth(landmarks);
+
+                // Step 4: キネマティクス計算
+                var result = PoseEstimationResult.Success(landmarks);
+                result.BoneRotations = _solver.Solve(landmarks, animator);
+
+                // Step 5: アニメーション書き出し
+                result.ExportedPath = _exporter.Export(
+                    result.BoneRotations, animator, savePath);
+
+                return result;
             }
-
-            // Step 3: 深度推定
-            _depthEstimator.EstimateDepth(landmarks);
-
-            // Step 4: キネマティクス計算
-            var result = PoseEstimationResult.Success(landmarks);
-            result.BoneRotations = _solver.Solve(landmarks, referenceAvatar);
-
-            // Step 5: アニメーション書き出し
-            result.ExportedPath = _exporter.Export(
-                result.BoneRotations, referenceAvatar, savePath);
-
-            return result;
+            finally
+            {
+                Object.DestroyImmediate(instance);
+            }
         }
     }
 }

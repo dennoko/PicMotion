@@ -1,5 +1,6 @@
 using UnityEditor;
 using UnityEngine;
+using Unity.Barracuda;
 using PicMotion.Pipeline;
 
 namespace PicMotion.UI
@@ -12,21 +13,25 @@ namespace PicMotion.UI
     {
         private Texture2D _sourceImage;
         private GameObject _avatarPrefab;
+        private NNModel _modelAsset;
         private string _savePath = "Assets/PicMotion_Output.anim";
         private string _statusMessage;
         private MessageType _statusType = MessageType.None;
+        private bool _useMock;
 
         [MenuItem("Tools/PicMotion")]
         public static void ShowWindow()
         {
             var window = GetWindow<PicMotionWindow>("PicMotion");
-            window.minSize = new Vector2(350, 280);
+            window.minSize = new Vector2(350, 320);
         }
 
         private void OnGUI()
         {
             DrawHeader();
             EditorGUILayout.Space(8);
+            DrawModelSettings();
+            EditorGUILayout.Space(4);
             DrawInputFields();
             EditorGUILayout.Space(8);
             DrawSavePath();
@@ -35,7 +40,7 @@ namespace PicMotion.UI
             DrawStatus();
         }
 
-        // ── UI描画メソッド群 ──
+        // ── UI描画 ──
 
         private void DrawHeader()
         {
@@ -46,11 +51,22 @@ namespace PicMotion.UI
                 EditorStyles.wordWrappedMiniLabel);
         }
 
+        private void DrawModelSettings()
+        {
+            EditorGUILayout.LabelField("推論設定", EditorStyles.miniBoldLabel);
+            _useMock = EditorGUILayout.Toggle("モックモード", _useMock);
+
+            EditorGUI.BeginDisabledGroup(_useMock);
+            _modelAsset = (NNModel)EditorGUILayout.ObjectField(
+                "ONNXモデル", _modelAsset, typeof(NNModel), false);
+            EditorGUI.EndDisabledGroup();
+        }
+
         private void DrawInputFields()
         {
+            EditorGUILayout.LabelField("入力", EditorStyles.miniBoldLabel);
             _sourceImage = (Texture2D)EditorGUILayout.ObjectField(
                 "入力画像", _sourceImage, typeof(Texture2D), false);
-
             _avatarPrefab = (GameObject)EditorGUILayout.ObjectField(
                 "アバターPrefab", _avatarPrefab, typeof(GameObject), false);
         }
@@ -72,21 +88,15 @@ namespace PicMotion.UI
 
         private void DrawGenerateButton()
         {
-            bool canGenerate = _sourceImage != null && _avatarPrefab != null;
+            bool canGenerate = ValidateInputs();
 
             EditorGUI.BeginDisabledGroup(!canGenerate);
             if (GUILayout.Button("ポーズを生成", GUILayout.Height(32)))
-            {
                 ExecutePipeline();
-            }
             EditorGUI.EndDisabledGroup();
 
             if (!canGenerate)
-            {
-                EditorGUILayout.HelpBox(
-                    "入力画像とアバターPrefabを設定してください。",
-                    MessageType.Info);
-            }
+                EditorGUILayout.HelpBox(GetValidationMessage(), MessageType.Info);
         }
 
         private void DrawStatus()
@@ -98,51 +108,65 @@ namespace PicMotion.UI
             }
         }
 
+        // ── バリデーション ──
+
+        private bool ValidateInputs()
+        {
+            if (_sourceImage == null || _avatarPrefab == null) return false;
+            if (!_useMock && _modelAsset == null) return false;
+
+            var animator = _avatarPrefab.GetComponent<Animator>();
+            return animator != null && animator.avatar != null && animator.avatar.isHuman;
+        }
+
+        private string GetValidationMessage()
+        {
+            if (_sourceImage == null) return "入力画像を設定してください。";
+            if (_avatarPrefab == null) return "アバターPrefabを設定してください。";
+
+            var animator = _avatarPrefab.GetComponent<Animator>();
+            if (animator == null || animator.avatar == null || !animator.avatar.isHuman)
+                return "PrefabにHumanoid Animatorが必要です。";
+
+            if (!_useMock && _modelAsset == null)
+                return "ONNXモデルを設定するか、モックモードを有効にしてください。";
+            return "";
+        }
+
         // ── パイプライン実行 ──
 
         private void ExecutePipeline()
         {
-            var avatar = ValidateAvatar();
-            if (avatar == null) return;
+            var pipeline = _useMock
+                ? PipelineFactory.CreateMock()
+                : PipelineFactory.CreateWithBarracuda(_modelAsset);
 
-            var pipeline = PipelineFactory.CreateDefault();
-            var result = pipeline.Execute(_sourceImage, avatar, _savePath);
-
-            if (result.IsValid)
+            try
             {
-                _statusMessage = $"✓ 生成完了: {result.ExportedPath}";
-                _statusType = MessageType.Info;
-                AssetDatabase.Refresh();
+                var result = pipeline.Execute(_sourceImage, _avatarPrefab, _savePath);
 
-                // 生成されたアセットを選択状態にする
-                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(result.ExportedPath);
-                if (clip != null) Selection.activeObject = clip;
+                if (result.IsValid)
+                {
+                    _statusMessage = $"✓ 生成完了: {result.ExportedPath}";
+                    _statusType = MessageType.Info;
+                    AssetDatabase.Refresh();
+
+                    var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(
+                        result.ExportedPath);
+                    if (clip != null) Selection.activeObject = clip;
+                }
+                else
+                {
+                    _statusMessage = $"✗ エラー: {result.ErrorMessage}";
+                    _statusType = MessageType.Error;
+                }
             }
-            else
+            catch (System.Exception e)
             {
-                _statusMessage = $"✗ エラー: {result.ErrorMessage}";
+                _statusMessage = $"✗ 例外: {e.Message}";
                 _statusType = MessageType.Error;
+                Debug.LogException(e);
             }
-        }
-
-        private Avatar ValidateAvatar()
-        {
-            var animator = _avatarPrefab.GetComponent<Animator>();
-            if (animator == null || animator.avatar == null)
-            {
-                _statusMessage = "エラー: PrefabにAnimatorコンポーネントがありません。";
-                _statusType = MessageType.Error;
-                return null;
-            }
-
-            if (!animator.avatar.isHuman)
-            {
-                _statusMessage = "エラー: Humanoid Avatarが設定されていません。";
-                _statusType = MessageType.Error;
-                return null;
-            }
-
-            return animator.avatar;
         }
     }
 }

@@ -9,11 +9,11 @@ namespace PicMotion.Kinematics
     public interface IKinematicsSolver
     {
         /// <summary>
-        /// ランドマーク座標と参照アバターから、各ボーンのローカル回転を計算する。
+        /// ランドマーク座標とアバターのAnimatorから、各ボーンの回転を計算する。
         /// </summary>
         /// <param name="landmarks">推定済みランドマーク座標（深度付き）</param>
-        /// <param name="referenceAvatar">基準姿勢(Tポーズ)の取得元アバター</param>
-        /// <returns>各ボーンの計算済みローカル回転の配列</returns>
-        HumanoidBoneRotation[] Solve(PoseLandmark[] landmarks, Avatar referenceAvatar);
+        /// <param name="animator">基準姿勢(Tポーズ)のAnimator（一時インスタンス）</param>
+        /// <returns>各ボーンの計算済み回転の配列</returns>
+        HumanoidBoneRotation[] Solve(PoseLandmark[] landmarks, Animator animator);
     }
 }

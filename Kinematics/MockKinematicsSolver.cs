@@ -9,9 +9,6 @@ namespace PicMotion.Kinematics
     /// </summary>
     public class MockKinematicsSolver : IKinematicsSolver
     {
-        /// <summary>
-        /// Humanoidの主要ボーンリスト。
-        /// </summary>
         private static readonly HumanBodyBones[] TargetBones = new[]
         {
             HumanBodyBones.Hips,
@@ -29,7 +26,7 @@ namespace PicMotion.Kinematics
             HumanBodyBones.RightLowerLeg,
         };
 
-        public HumanoidBoneRotation[] Solve(PoseLandmark[] landmarks, Avatar referenceAvatar)
+        public HumanoidBoneRotation[] Solve(PoseLandmark[] landmarks, Animator animator)
         {
             var rotations = new HumanoidBoneRotation[TargetBones.Length];
             for (int i = 0; i < TargetBones.Length; i++)

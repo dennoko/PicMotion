@@ -2,6 +2,7 @@ using PicMotion.PreProcessing;
 using PicMotion.Inference;
 using PicMotion.Kinematics;
 using PicMotion.Export;
+using Unity.Barracuda;
 
 namespace PicMotion.Pipeline
 {
@@ -12,17 +13,30 @@ namespace PicMotion.Pipeline
     public static class PipelineFactory
     {
         /// <summary>
-        /// デフォルト構成（モック + ヒューリスティック深度）のパイプラインを生成する。
-        /// Phase 3以降で実装クラスに順次差し替える。
+        /// モック構成のパイプラインを生成する（デバッグ用）。
         /// </summary>
-        public static PoseGenerationPipeline CreateDefault()
+        public static PoseGenerationPipeline CreateMock()
         {
             return new PoseGenerationPipeline(
-                preprocessor:  new MockImagePreprocessor(),
-                estimator:     new MockPoseEstimator(),
+                preprocessor:   new MockImagePreprocessor(),
+                estimator:      new MockPoseEstimator(),
                 depthEstimator: new HeuristicDepthEstimator(),
-                solver:        new MockKinematicsSolver(),
-                exporter:      new AnimationClipExporter()
+                solver:         new MockKinematicsSolver(),
+                exporter:       new AnimationClipExporter()
+            );
+        }
+
+        /// <summary>
+        /// Barracuda + RTMPose + ForwardKinematics 構成のパイプラインを生成する。
+        /// </summary>
+        public static PoseGenerationPipeline CreateWithBarracuda(NNModel modelAsset)
+        {
+            return new PoseGenerationPipeline(
+                preprocessor:   new RtmPoseImagePreprocessor(),
+                estimator:      new BarracudaRtmPoseEstimator(modelAsset),
+                depthEstimator: new HeuristicDepthEstimator(),
+                solver:         new ForwardKinematicsSolver(),
+                exporter:       new AnimationClipExporter()
             );
         }
     }
