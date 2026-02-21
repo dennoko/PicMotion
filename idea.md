@@ -82,9 +82,8 @@ Unityのエディタ拡張として実装するために、以下の技術・ラ
 
 ### 4.4 アセット生成・保存API群 (UnityEditor)
 - `EditorWindow`: 独自のUIパネル（モデル設定、画像ドロップエリア、書き出しボタン）の作成。
-- `AnimationClip`: アニメーションデータのコンテナ。
-- `EditorCurveBinding`: 各ボーンの `Transform.localRotation.x/y/z/w` に対するプロパティ指定。
-- `AnimationUtility.SetEditorCurve`: クリップへのカーブ（キーフレームデータ）の書き込み。
+- `HumanPoseHandler`: ボーン回転をスケルトンに適用後、Humanoidマッスル値を読み取る（ボーン回転→マッスル値変換）。
+- `AnimationClip` + `EditorCurveBinding` + `AnimationUtility.SetEditorCurve`: マッスル値を`Animator`型のHumanoidプロパティとしてカーブに書き込み。
 - `AssetDatabase.CreateAsset`: クリップのファイル（`.anim`）としての永続化。
 
 ---
@@ -96,17 +95,17 @@ Unityのエディタ拡張として実装するために、以下の技術・ラ
 1. **[Input] データ準備** (`PicMotionWindow`)
    - ユーザーからの画像入力、HumanoidアバターPrefabの参照セット。
 2. **[Pre-process] 画像の前処理** (`IImagePreprocessor`)
-   - 画像をRTMPoseが要求する入力解像度にリサイズ・変換し、正規化されたモデル入力形式（TensorFloatなど）を生成。
+   - 画像をRTMPoseが要求する入力解像度(192x256)にRenderTexture経由でリサイズし、ImageNet mean/std正規化を適用したNHWC形式のfloat配列を生成。
 3. **[Inference] 推論実行** (`IPoseEstimator`)
-   - Unity Sentis の Worker を使用してRTMPose-Wholebody推論を実行。非同期で結果となる133カ所の関節の (x, y, score) 情報を抽出 (`PoseLandmark[]`)。
-4. **[Z-Estimation] 深度推定** (ヒューリスティック)
-   - 2D座標のみのランドマークに対し、ボーン長比率・関節角度の幾何学的制約からZ値をヒューリスティック推定し、擬似3D座標を構築。
-5. **[Post-process] キネマティクス計算 (🔥最難関)** (`IKinematicsSolver`)
-   - 指定アバターPrefabからTポーズのデフォルトボーン回転を取得。
-   - ランドマーク擬似3D座標を元に、各関節の要求方向ベクトルを算出。
-   - デフォルト状態から要求方向へ向けるための差分Rotationを算出し、Humanoidボーン単位での LocalRotation に変換。
+   - Unity Barracuda の IWorker を使用してRTMPose-Wholebody推論を実行。133カ所の関節の (x, y, score) 情報を抽出 (`PoseLandmark[]`)。
+4. **[Z-Estimation] 深度推定** (`IDepthEstimator`)
+   - 肩幅を基準長とし、各ボーンの見かけの2D長と想定3D長を比較。直角三角形の原理からZ値をヒューリスティック推定し、擬似3D座標を構築。
+5. **[Post-process] キネマティクス計算** (`IKinematicsSolver`)
+   - アバターPrefabを一時インスタンス化し、AnimatorからTポーズのデフォルトボーン回転を取得。
+   - ランドマークから仮想ジョイント(Hips/Spine/Chest/Neck)を補間生成し、各関節の方向ベクトルを算出。
+   - `Quaternion.FromToRotation` でTポーズ方向からターゲット方向への差分回転を計算。
 6. **[Export] アニメーション書き出し** (`IAnimationExporter`)
-   - 生成した各ボーンのパスごとの回転情報をCurveとしてまとめ、AnimationClipを生成し、AssetDatabase経由で保存する。
+   - ボーン回転をスケルトンに適用後、`HumanPoseHandler`でHumanoidマッスル値を読み取り、各マッスル名の`EditorCurveBinding`としてAnimationClipに書き込み、AssetDatabase経由で保存。
 
 ---
 
