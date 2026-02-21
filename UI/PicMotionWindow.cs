@@ -18,6 +18,7 @@ namespace PicMotion.UI
         private string _statusMessage;
         private MessageType _statusType = MessageType.None;
         private bool _useMock;
+        private bool _showDebugLandmarks;
 
         [MenuItem("Tools/PicMotion")]
         public static void ShowWindow()
@@ -60,6 +61,9 @@ namespace PicMotion.UI
             _modelAsset = (NNModel)EditorGUILayout.ObjectField(
                 "ONNXモデル", _modelAsset, typeof(NNModel), false);
             EditorGUI.EndDisabledGroup();
+
+            _showDebugLandmarks = EditorGUILayout.Toggle(
+                "Sceneビュー デバッグ表示", _showDebugLandmarks);
         }
 
         private void DrawInputFields()
@@ -150,6 +154,12 @@ namespace PicMotion.UI
                     _statusMessage = $"✓ 生成完了: {result.ExportedPath}";
                     _statusType = MessageType.Info;
                     AssetDatabase.Refresh();
+
+                    // デバッグ可視化
+                    if (_showDebugLandmarks && result.Landmarks != null)
+                        LandmarkDebugVisualizer.SetLandmarks(result.Landmarks);
+                    else
+                        LandmarkDebugVisualizer.Clear();
 
                     var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(
                         result.ExportedPath);
